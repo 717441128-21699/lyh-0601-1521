@@ -93,15 +93,15 @@ router.post('/execute', async (req, res) => {
       config,
       batchName
     );
-    res.json({ executionId: batchId, config });
 
-    setImmediate(async () => {
-      try {
-        await batchExecutionService.executeBatch(batchId);
-      } catch (e) {
-        console.error('Batch execution error:', e);
-      }
-    });
+    const existingResult = batchExecutionService.getResult(batchId);
+    const existingBatch = batchExecutionService.getBatch(batchId);
+    if (existingResult && (existingBatch?.status === 'completed' || existingBatch?.status === 'failed' || existingBatch?.status === 'running')) {
+      return res.json({ executionId: batchId, config, result: existingResult });
+    }
+
+    const result = await batchExecutionService.executeBatch(batchId);
+    res.json({ executionId: batchId, config, result });
   } catch (e: any) {
     res.status(500).json({ error: e.message || '执行服务异常' });
   }
@@ -110,6 +110,11 @@ router.post('/execute', async (req, res) => {
 router.post('/execute/:batchId', async (req, res) => {
   try {
     const { batchId } = req.params;
+    const existingResult = batchExecutionService.getResult(batchId);
+    const existingBatch = batchExecutionService.getBatch(batchId);
+    if (existingResult && (existingBatch?.status === 'completed' || existingBatch?.status === 'failed' || existingBatch?.status === 'running')) {
+      return res.json(existingResult);
+    }
     const result = await batchExecutionService.executeBatch(batchId);
     res.json(result);
   } catch (e: any) {

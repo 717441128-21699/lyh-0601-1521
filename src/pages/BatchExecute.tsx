@@ -165,11 +165,14 @@ export default function BatchExecute() {
   const totalCount = result?.totalCount || 0;
   const successCount = result?.successCount || 0;
   const failedCount = result?.failedCount || 0;
-  const pendingCount = Math.max(0, totalCount - successCount - failedCount);
-  const progressPercent = totalCount > 0 ? Math.min(100, Math.round((successCount + failedCount) / totalCount * 100)) : 0;
+  const rolledBackCount = result?.rolledBackCount || 0;
+  const isRolledBack = rolledBackCount > 0;
+  const pendingCount = isRolledBack ? 0 : Math.max(0, totalCount - successCount - failedCount - rolledBackCount);
+  const progressPercent = totalCount > 0 ? Math.min(100, Math.round((successCount + failedCount + rolledBackCount) / totalCount * 100)) : 0;
   const successPercent = totalCount > 0 ? Math.min(100, Math.round(successCount / totalCount * 100)) : 0;
   const failedPercent = totalCount > 0 ? Math.min(100, Math.round(failedCount / totalCount * 100)) : 0;
-  const pendingPercent = Math.max(0, 100 - successPercent - failedPercent);
+  const rolledBackPercent = totalCount > 0 ? Math.min(100, Math.round(rolledBackCount / totalCount * 100)) : 0;
+  const pendingPercent = isRolledBack ? 0 : Math.max(0, 100 - successPercent - failedPercent - rolledBackPercent);
 
   const displayBatchId = currentBatchId || executionId || result?.batchId;
   const hasBatch = !!displayBatchId;
@@ -431,7 +434,7 @@ export default function BatchExecute() {
 
               {result ? (
                 <>
-                  <div className="grid grid-cols-3 gap-4 mb-5">
+                  <div className={`grid gap-4 mb-5 ${isRolledBack ? 'grid-cols-3' : 'grid-cols-3'}`}>
                     <ProgressMiniCard
                       label="成功"
                       value={`${successCount}条`}
@@ -446,13 +449,23 @@ export default function BatchExecute() {
                       color="danger"
                       icon={XCircle}
                     />
-                    <ProgressMiniCard
-                      label="待处理"
-                      value={`${pendingCount}条`}
-                      percent={pendingPercent}
-                      color="primary"
-                      icon={Clock}
-                    />
+                    {isRolledBack ? (
+                      <ProgressMiniCard
+                        label="已撤回"
+                        value={`${rolledBackCount}条`}
+                        percent={rolledBackPercent}
+                        color="primary"
+                        icon={Undo2}
+                      />
+                    ) : (
+                      <ProgressMiniCard
+                        label="待处理"
+                        value={`${pendingCount}条`}
+                        percent={pendingPercent}
+                        color="primary"
+                        icon={Clock}
+                      />
+                    )}
                   </div>
 
                   <div className="space-y-1.5 mb-4">
@@ -465,14 +478,25 @@ export default function BatchExecute() {
                         className="absolute top-0 h-full bg-gradient-to-r from-danger-400 to-danger-600 transition-all duration-500"
                         style={{ width: `${failedPercent}%`, left: `${successPercent}%` }}
                       />
-                      <div
-                        className="absolute top-0 h-full bg-gradient-to-r from-primary-300 to-primary-500 transition-all duration-500"
-                        style={{ width: `${pendingPercent}%`, left: `${successPercent + failedPercent}%` }}
-                      />
+                      {isRolledBack ? (
+                        <div
+                          className="absolute top-0 h-full bg-gradient-to-r from-slate-400 to-slate-600 transition-all duration-500"
+                          style={{ width: `${rolledBackPercent}%`, left: `${successPercent + failedPercent}%` }}
+                        />
+                      ) : (
+                        <div
+                          className="absolute top-0 h-full bg-gradient-to-r from-primary-300 to-primary-500 transition-all duration-500"
+                          style={{ width: `${pendingPercent}%`, left: `${successPercent + failedPercent}%` }}
+                        />
+                      )}
                     </div>
                     <div className="flex items-center justify-between text-xs text-slate-500">
                       <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-success-500" /> 成功 {successPercent}%</span>
-                      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-primary-400" /> 待处理 {pendingPercent}%</span>
+                      {isRolledBack ? (
+                        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-500" /> 已撤回 {rolledBackPercent}%</span>
+                      ) : (
+                        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-primary-400" /> 待处理 {pendingPercent}%</span>
+                      )}
                       <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-danger-500" /> 失败 {failedPercent}%</span>
                     </div>
                   </div>

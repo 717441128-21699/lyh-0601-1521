@@ -47,12 +47,14 @@ export default function ReportCenter() {
   const {
     allResults, fetchAllReports, currentExecutionResult, fetchReport,
     selectedRollbackRecord, isLoading, batchSummaryList, fetchBatchList,
+    rollbackRecords, fetchRollbackRecords,
   } = useHRStore();
 
   useEffect(() => {
     fetchBatchList();
     fetchAllReports();
-  }, [fetchBatchList, fetchAllReports]);
+    fetchRollbackRecords();
+  }, [fetchBatchList, fetchAllReports, fetchRollbackRecords]);
 
   useEffect(() => {
     if (currentExecutionResult?.batchId && !selectedBatch) {
@@ -60,15 +62,19 @@ export default function ReportCenter() {
     }
   }, [currentExecutionResult, selectedBatch]);
 
-  const displayResult = selectedBatch
-    ? allResults.find(r => r.batchId === selectedBatch)
-    : currentExecutionResult || allResults[0];
+  const displayResult = (currentExecutionResult?.batchId === selectedBatch || !selectedBatch)
+    ? (currentExecutionResult || allResults[0])
+    : (allResults.find(r => r.batchId === selectedBatch) || currentExecutionResult || allResults[0]);
 
   useEffect(() => {
     if (displayResult?.batchId) {
       fetchReport(displayResult.batchId);
     }
   }, [selectedBatch]);
+
+  const rollbackForBatch = selectedRollbackRecord?.batchId === displayResult?.batchId
+    ? selectedRollbackRecord
+    : (rollbackRecords.find(r => r.batchId === displayResult?.batchId) || null);
 
   const allItems = displayResult?.allItems || [];
 
@@ -279,15 +285,15 @@ export default function ReportCenter() {
                         <InfoRow label="开始时间" value={new Date(displayResult.startTime).toLocaleString('zh-CN')} />
                         <InfoRow label="结束时间" value={new Date(displayResult.endTime).toLocaleString('zh-CN')} />
                         <InfoRow label="回滚状态" value={
-                          selectedRollbackRecord ? (
+                          rollbackForBatch ? (
                             <span className={`badge ${
-                              selectedRollbackRecord.status === 'rolled_back' ? 'bg-slate-100 text-slate-700' :
-                              selectedRollbackRecord.status === 'available' ? 'bg-success-100 text-success-700' :
+                              rollbackForBatch.status === 'rolled_back' ? 'bg-slate-100 text-slate-700' :
+                              rollbackForBatch.status === 'available' ? 'bg-success-100 text-success-700' :
                               'bg-warning-100 text-warning-700'
                             }`}>
-                              {selectedRollbackRecord.status === 'rolled_back' ? '已撤回' :
-                               selectedRollbackRecord.status === 'available' ? '可撤回' :
-                               selectedRollbackRecord.status === 'rollback_in_progress' ? '撤回中' : '撤回失败'}
+                              {rollbackForBatch.status === 'rolled_back' ? '已撤回' :
+                               rollbackForBatch.status === 'available' ? '可撤回' :
+                               rollbackForBatch.status === 'rollback_in_progress' ? '撤回中' : '撤回失败'}
                             </span>
                           ) : <span className="text-slate-400">-</span>
                         } />

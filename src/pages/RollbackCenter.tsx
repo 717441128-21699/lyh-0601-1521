@@ -417,13 +417,17 @@ export default function RollbackCenter() {
                             <span className={`text-xs font-semibold ${isRolledBack(activeRecord) ? 'text-slate-600' : 'text-slate-700'}`}>
                               {after.employeeName} ({after.employeeId})
                             </span>
-                            <span className={`badge ${
-                              after.status === 'success' ? 'bg-success-100 text-success-700' :
-                              after.status === 'rolled_back' ? 'bg-slate-200 text-slate-700' :
-                              'bg-warning-100 text-warning-700'
-                            }`}>
-                              {after.status === 'success' ? '已生效' : after.status === 'rolled_back' ? '已回滚' : '状态未知'}
-                            </span>
+                            {isRolledBack(activeRecord) ? (
+                              <span className="badge bg-slate-200 text-slate-700">已撤回</span>
+                            ) : (
+                              <span className={`badge ${
+                                after.status === 'success' ? 'bg-success-100 text-success-700' :
+                                after.status === 'rolled_back' ? 'bg-slate-200 text-slate-700' :
+                                'bg-warning-100 text-warning-700'
+                              }`}>
+                                {after.status === 'success' ? '已生效' : after.status === 'rolled_back' ? '已撤回' : '状态未知'}
+                              </span>
+                            )}
                           </div>
 
                           <div className="overflow-hidden rounded-lg border border-slate-200">

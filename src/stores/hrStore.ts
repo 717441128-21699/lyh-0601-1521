@@ -233,7 +233,7 @@ export const useHRStore = create<HRState>((set, get) => ({
   },
 
   executeBatch: async (batchName, resumeBatchId) => {
-    const { validChanges, changes, executionConfig } = get();
+    const { validChanges, changes, executionConfig, currentExecutionResult, executionId } = get();
     const changesToSubmit =
       validChanges.length > 0 ? validChanges : changes.filter((c) => !c.errors || c.errors.length === 0);
 
@@ -242,12 +242,24 @@ export const useHRStore = create<HRState>((set, get) => ({
       return null;
     }
 
+    const existingId = resumeBatchId || executionId || currentExecutionResult?.batchId;
+    if (existingId) {
+      const existing = await get().getBatchStatus(existingId);
+      if (existing?.batch && (existing.batch.status === 'running' || existing.batch.status === 'completed')) {
+        set({ isLoading: true });
+        await new Promise(r => setTimeout(r, 500));
+        await get().fetchReport(existingId);
+        set({ isLoading: false });
+        return get().currentExecutionResult;
+      }
+    }
+
     set({ isLoading: true, error: null });
     try {
       const createRes = await fetch('/api/hr/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ changes: changesToSubmit, config: executionConfig, batchName, resumeBatchId }),
+        body: JSON.stringify({ changes: changesToSubmit, config: executionConfig, batchName, resumeBatchId: existingId }),
       });
       const createData = await createRes.json();
       if (!createRes.ok) throw new Error(createData.error || '创建批次失败');
@@ -255,24 +267,40 @@ export const useHRStore = create<HRState>((set, get) => ({
       const batchId = createData.executionId;
       set({ executionId: batchId });
 
-      const execRes = await fetch(`/api/hr/execute/${batchId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      const result = await execRes.json();
-      if (!execRes.ok) throw new Error(result.error || '执行失败');
+      const result = createData.result;
+      if (result) {
+        set({
+          currentExecutionResult: result,
+          isLoading: false,
+          currentStep: 3,
+        });
+        await get().fetchBatchList();
+        await get().fetchAllReports();
+        await get().fetchRollbackRecords();
+        return result;
+      }
 
-      set({
-        currentExecutionResult: result,
-        isLoading: false,
-        currentStep: 3,
-      });
+      let attempts = 0;
+      const maxAttempts = 60;
+      while (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 1000));
+        const status = await get().getBatchStatus(batchId);
+        if (status?.result && (status.batch?.status === 'completed' || status.batch?.status === 'failed')) {
+          set({
+            currentExecutionResult: status.result,
+            isLoading: false,
+            currentStep: 3,
+          });
+          await get().fetchBatchList();
+          await get().fetchAllReports();
+          await get().fetchRollbackRecords();
+          return status.result;
+        }
+        attempts++;
+      }
 
-      await get().fetchBatchList();
-      await get().fetchAllReports();
-      await get().fetchRollbackRecords();
-
-      return result;
+      set({ isLoading: false });
+      return get().currentExecutionResult;
     } catch (e: any) {
       set({ error: e.message, isLoading: false });
       return null;
