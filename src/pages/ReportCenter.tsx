@@ -27,49 +27,51 @@ import {
   Eye,
   Undo2,
   ArrowRight,
-  FileCheck2
+  FileCheck2,
+  RotateCcw
 } from 'lucide-react';
 import { useHRStore } from '@/stores/hrStore';
 import type { ExecutionResult, EmployeeChange } from '../../shared/types';
+import { STATUS_LABELS, STATUS_COLORS } from '../../shared/types';
 
-const PIE_COLORS = ['#059669', '#DC2626'];
+const PIE_COLORS = ['#059669', '#DC2626', '#94A3B8'];
 
 export default function ReportCenter() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'overview' | 'detail'>('overview');
-  const [filterStatus, setFilterStatus] = useState<'all' | 'success' | 'failed'>('all');
+  const [filterStatus, setFilterStatus] = useState<'all' | 'success' | 'failed' | 'rolled_back'>('all');
   const [searchText, setSearchText] = useState('');
   const [selectedBatch, setSelectedBatch] = useState<string | null>(null);
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
 
   const {
     allResults, fetchAllReports, currentExecutionResult, fetchReport,
-    selectedRollbackRecord, isLoading,
+    selectedRollbackRecord, isLoading, batchSummaryList, fetchBatchList,
   } = useHRStore();
 
   useEffect(() => {
+    fetchBatchList();
     fetchAllReports();
-  }, [fetchAllReports]);
+  }, [fetchBatchList, fetchAllReports]);
 
   const displayResult = selectedBatch
     ? allResults.find(r => r.batchId === selectedBatch)
     : currentExecutionResult || allResults[0];
 
   useEffect(() => {
-    if (displayResult && selectedBatch !== displayResult.batchId) {
+    if (displayResult?.batchId) {
       fetchReport(displayResult.batchId);
     }
-  }, [selectedBatch, displayResult?.batchId]);
+  }, [selectedBatch]);
 
-  const allItems = displayResult
-    ? [...displayResult.successItems, ...displayResult.failedItems]
-    : [];
+  const allItems = displayResult?.allItems || [];
 
   const filteredItems = allItems.filter(item => {
     const matchStatus =
       filterStatus === 'all' ? true :
       filterStatus === 'success' ? item.status === 'success' :
-      item.status === 'failed';
+      filterStatus === 'failed' ? item.status === 'failed' :
+      item.status === 'rolled_back';
     const matchSearch = !searchText ||
       (item.employeeName || '').toLowerCase().includes(searchText.toLowerCase()) ||
       item.employeeId.toLowerCase().includes(searchText.toLowerCase());
@@ -78,11 +80,13 @@ export default function ReportCenter() {
 
   const successItems = filteredItems.filter(i => i.status === 'success');
   const failedItems = filteredItems.filter(i => i.status === 'failed');
+  const rolledBackItems = filteredItems.filter(i => i.status === 'rolled_back');
 
   const deptData = displayResult ? computeDeptData(displayResult) : [];
   const pieData = displayResult ? [
     { name: '成功', value: displayResult.successCount },
     { name: '失败', value: displayResult.failedCount },
+    { name: '已撤回', value: displayResult.rolledBackCount },
   ] : [];
 
   const mockTrendData = [
@@ -93,6 +97,10 @@ export default function ReportCenter() {
     { month: '5月', 异动数: 89, 成功率: 91 },
     { month: '6月', 异动数: displayResult?.totalCount || 0, 成功率: displayResult ? Math.round((displayResult.successCount / displayResult.totalCount) * 100) : 0 },
   ];
+
+  const executionDuration = displayResult
+    ? `${Math.max(1, Math.round((new Date(displayResult.endTime).getTime() - new Date(displayResult.startTime).getTime()) / 1000))}s`
+    : '-';
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -123,17 +131,17 @@ export default function ReportCenter() {
         </div>
       </div>
 
-      {allResults.length > 1 && (
+      {batchSummaryList.length > 0 && (
         <div className="card p-4 animate-slide-up flex items-center gap-4">
           <span className="text-sm font-semibold text-slate-700">选择批次：</span>
           <select
-            className="input-base w-auto min-w-[300px]"
+            className="input-base w-auto min-w-[380px]"
             value={selectedBatch || displayResult?.batchId || ''}
             onChange={e => setSelectedBatch(e.target.value)}
           >
-            {allResults.map(r => (
-              <option key={r.batchId} value={r.batchId}>
-                {r.batchName} - 成功{r.successCount}/失败{r.failedCount} ({new Date(r.endTime).toLocaleDateString('zh-CN')})
+            {batchSummaryList.map(b => (
+              <option key={b.batchId} value={b.batchId}>
+                {b.batchName} - 总数{b.totalCount}/成功{b.successCount}/失败{b.failedCount}/撤回{b.rolledBackCount} ({new Date(b.endTime).toLocaleDateString('zh-CN')}) - {b.operator}
               </option>
             ))}
           </select>
@@ -185,10 +193,10 @@ export default function ReportCenter() {
               animateIdx={3}
             />
             <StatCard
-              icon={Clock}
-              label="执行耗时"
-              value={`${Math.max(1, Math.round((new Date(displayResult.endTime).getTime() - new Date(displayResult.startTime).getTime()) / 1000))}s`}
-              sub={`${new Date(displayResult.startTime).toLocaleTimeString('zh-CN')} 开始`}
+              icon={RotateCcw}
+              label="已撤回"
+              value={displayResult.rolledBackCount}
+              sub={`占比 ${displayResult.totalCount ? Math.round(displayResult.rolledBackCount / displayResult.totalCount * 100) : 0}%`}
               color="info"
               animateIdx={4}
             />
@@ -224,7 +232,7 @@ export default function ReportCenter() {
                     <div className="p-5 rounded-xl bg-gradient-to-br from-slate-50 to-white border border-slate-100">
                       <h4 className="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
                         <FileCheck2 className="w-4 h-4 text-primary-600" />
-                        成功/失败分布
+                        成功/失败/撤回分布
                       </h4>
                       <div className="h-56">
                         <ResponsiveContainer width="100%" height="100%">
@@ -258,6 +266,7 @@ export default function ReportCenter() {
                         <InfoRow label="批次名称" value={displayResult.batchName} />
                         <InfoRow label="批次ID" value={displayResult.batchId} mono />
                         <InfoRow label="操作人" value={displayResult.operator} />
+                        <InfoRow label="执行耗时" value={executionDuration} />
                         <InfoRow label="开始时间" value={new Date(displayResult.startTime).toLocaleString('zh-CN')} />
                         <InfoRow label="结束时间" value={new Date(displayResult.endTime).toLocaleString('zh-CN')} />
                         <InfoRow label="回滚状态" value={
@@ -267,21 +276,20 @@ export default function ReportCenter() {
                               selectedRollbackRecord.status === 'available' ? 'bg-success-100 text-success-700' :
                               'bg-warning-100 text-warning-700'
                             }`}>
-                              {selectedRollbackRecord.status === 'rolled_back' ? '已回滚' :
-                               selectedRollbackRecord.status === 'available' ? '可撤回' : '回滚中'}
+                              {selectedRollbackRecord.status === 'rolled_back' ? '已撤回' :
+                               selectedRollbackRecord.status === 'available' ? '可撤回' :
+                               selectedRollbackRecord.status === 'rollback_in_progress' ? '撤回中' : '撤回失败'}
                             </span>
                           ) : <span className="text-slate-400">-</span>
                         } />
                       </div>
-                      {selectedRollbackRecord?.status === 'available' && (
-                        <button
-                          onClick={() => navigate('/rollback')}
-                          className="w-full mt-4 btn-secondary text-xs"
-                        >
-                          <Undo2 className="w-3.5 h-3.5" />
-                          前往回滚中心
-                        </button>
-                      )}
+                      <button
+                        onClick={() => navigate('/rollback')}
+                        className="w-full mt-4 btn-secondary text-xs"
+                      >
+                        <Undo2 className="w-3.5 h-3.5" />
+                        前往回滚中心
+                      </button>
                     </div>
                   </div>
 
@@ -357,7 +365,7 @@ export default function ReportCenter() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Filter className="w-4 h-4 text-slate-400" />
-                      {(['all', 'success', 'failed'] as const).map(s => (
+                      {(['all', 'success', 'failed', 'rolled_back'] as const).map(s => (
                         <button
                           key={s}
                           onClick={() => setFilterStatus(s)}
@@ -369,7 +377,8 @@ export default function ReportCenter() {
                         >
                           {s === 'all' ? `全部 (${filteredItems.length})` :
                            s === 'success' ? `成功 (${successItems.length})` :
-                           `失败 (${failedItems.length})`}
+                           s === 'failed' ? `失败 (${failedItems.length})` :
+                           `已撤回 (${rolledBackItems.length})`}
                         </button>
                       ))}
                     </div>
@@ -425,6 +434,9 @@ function TableRow({ item, index, expanded, onToggle }: {
 }) {
   const isSuccess = item.status === 'success';
   const isFailed = item.status === 'failed';
+  const isRolledBack = item.status === 'rolled_back';
+  const statusLabel = STATUS_LABELS[item.status];
+  const statusColor = STATUS_COLORS[item.status];
   return (
     <>
       <tr className="hover:bg-slate-50/60 transition-colors">
@@ -434,6 +446,7 @@ function TableRow({ item, index, expanded, onToggle }: {
             <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm ${
               isSuccess ? 'bg-gradient-to-br from-success-400 to-success-600' :
               isFailed ? 'bg-gradient-to-br from-danger-400 to-danger-600' :
+              isRolledBack ? 'bg-gradient-to-br from-slate-400 to-slate-600' :
               'bg-gradient-to-br from-slate-400 to-slate-600'
             }`}>
               {(item.employeeName || item.employeeId).charAt(0)}
@@ -459,19 +472,13 @@ function TableRow({ item, index, expanded, onToggle }: {
         <td className="table-cell text-sm">{item.newManagerName || item.newManagerId || '-'}</td>
         <td className="table-cell text-sm font-mono">{item.effectiveDate || '-'}</td>
         <td className="table-cell">
-          {isSuccess ? (
-            <span className="badge bg-success-100 text-success-700">
-              <CheckCircle2 className="w-3 h-3" /> 成功
-            </span>
-          ) : isFailed ? (
-            <span className="badge bg-danger-100 text-danger-700">
-              <XCircle className="w-3 h-3" /> 失败
-            </span>
-          ) : (
-            <span className="badge bg-slate-100 text-slate-600">
-              <AlertTriangle className="w-3 h-3" /> 未知
-            </span>
-          )}
+          <span className={`badge ${statusColor}`}>
+            {isSuccess && <CheckCircle2 className="w-3 h-3" />}
+            {isFailed && <XCircle className="w-3 h-3" />}
+            {isRolledBack && <RotateCcw className="w-3 h-3" />}
+            {!isSuccess && !isFailed && !isRolledBack && <AlertTriangle className="w-3 h-3" />}
+            {statusLabel}
+          </span>
         </td>
         <td className="table-cell">
           <button onClick={onToggle} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
@@ -482,15 +489,80 @@ function TableRow({ item, index, expanded, onToggle }: {
       {expanded && (
         <tr className="animate-slide-up">
           <td colSpan={8} className="bg-slate-50/80 px-6 py-5">
+            <div className="mb-4">
+              <h5 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+                <FileCheck2 className="w-4 h-4 text-primary-600" />
+                变更详情对比
+              </h5>
+              <div className="overflow-hidden rounded-xl border border-slate-200">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-100">
+                      <th className="px-4 py-3 text-left font-semibold text-slate-700 w-32">变更项</th>
+                      <th className="px-4 py-3 text-left font-semibold text-slate-500 w-2/5">变更前 (originalData)</th>
+                      <th className="px-4 py-3 text-left font-semibold text-primary-700 w-2/5">变更后 (newData)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-t border-slate-100">
+                      <td className="px-4 py-3 font-medium text-slate-700">部门</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {item.originalData?.departmentName || item.sourceDepartment || '-'}
+                        {item.originalData?.departmentId && (
+                          <span className="ml-2 text-xs text-slate-400 font-mono">({item.originalData.departmentId})</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-primary-700 font-medium">
+                        {item.newData?.departmentName || item.targetDepartment || '-'}
+                        {item.newData?.departmentId && (
+                          <span className="ml-2 text-xs text-primary-400 font-mono">({item.newData.departmentId})</span>
+                        )}
+                      </td>
+                    </tr>
+                    <tr className="border-t border-slate-100">
+                      <td className="px-4 py-3 font-medium text-slate-700">岗位</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {item.originalData?.positionName || '-'}
+                        {item.originalData?.positionId && (
+                          <span className="ml-2 text-xs text-slate-400 font-mono">({item.originalData.positionId})</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-primary-700 font-medium">
+                        {item.newData?.positionName || item.targetPosition || '-'}
+                        {item.newData?.positionId && (
+                          <span className="ml-2 text-xs text-primary-400 font-mono">({item.newData.positionId})</span>
+                        )}
+                      </td>
+                    </tr>
+                    <tr className="border-t border-slate-100">
+                      <td className="px-4 py-3 font-medium text-slate-700">主管</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {item.originalData?.managerName || '-'}
+                        {item.originalData?.managerId && (
+                          <span className="ml-2 text-xs text-slate-400 font-mono">({item.originalData.managerId})</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-primary-700 font-medium">
+                        {item.newData?.managerName || item.newManagerName || '-'}
+                        {(item.newData?.managerId || item.newManagerId) && (
+                          <span className="ml-2 text-xs text-primary-400 font-mono">({item.newData?.managerId || item.newManagerId})</span>
+                        )}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             <div className="grid grid-cols-4 gap-4">
               <DetailItem label="员工编号" value={item.employeeId} />
               <DetailItem label="员工姓名" value={item.employeeName || '-'} />
-              <DetailItem label="原部门" value={item.sourceDepartment} />
-              <DetailItem label="新部门" value={item.targetDepartment} />
               <DetailItem label="新岗位" value={item.targetPosition} />
+              <DetailItem label="生效日期" value={item.effectiveDate} />
+              <DetailItem label="成本中心" value={item.newData?.costCenter || item.originalData?.costCenter || '-'} />
+              <DetailItem label="考勤组" value={item.newData?.attendanceGroup || item.originalData?.attendanceGroup || '-'} />
               <DetailItem label="新主管编号" value={item.newManagerId} />
               <DetailItem label="新主管姓名" value={item.newManagerName || '-'} />
-              <DetailItem label="生效日期" value={item.effectiveDate} />
             </div>
             {isFailed && item.failReason && (
               <div className="mt-4 p-4 rounded-xl bg-danger-50 border border-danger-200 flex items-start gap-3">
@@ -515,7 +587,7 @@ function StatCard({ icon: Icon, label, value, sub, color, animateIdx }: {
     primary: { grad: 'from-primary-100 to-primary-200', text: 'text-primary-700', line: '#1e40af' },
     success: { grad: 'from-success-100 to-success-200', text: 'text-success-700', line: '#059669' },
     danger: { grad: 'from-danger-100 to-danger-200', text: 'text-danger-700', line: '#DC2626' },
-    info: { grad: 'from-info-100 to-info-200', text: 'text-info-700', line: '#0284c7' },
+    info: { grad: 'from-slate-100 to-slate-200', text: 'text-slate-700', line: '#94A3B8' },
   }[color]!;
   return (
     <div className={`stat-card animate-slide-up animate-stagger-${animateIdx}`} style={{ borderLeft: `4px solid ${cfg.line}` }}>

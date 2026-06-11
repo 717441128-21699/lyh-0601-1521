@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Papa from 'papaparse';
+import PrecheckModal from '@/components/PrecheckModal';
 import {
   Upload,
   FileSpreadsheet,
@@ -20,7 +21,11 @@ import {
   X,
   Loader2,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  History,
+  Clock,
+  Hash,
+  BarChart3
 } from 'lucide-react';
 import { useHRStore } from '@/stores/hrStore';
 import type { EmployeeChange, ValidationErrorType } from '../../shared/types';
@@ -83,13 +88,19 @@ export default function Home() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingChange, setEditingChange] = useState<EmployeeChange | null>(null);
   const [formData, setFormData] = useState<Partial<EmployeeChange>>({});
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
 
   const {
     changes, totalCount, validCount, invalidCount, errorsByType,
     isLoading, error, currentStep,
     setChanges, addChange, updateChange, removeChange, clearChanges,
     validateChanges, departments, employees, positions,
+    runPrecheck, batchSummaryList, fetchBatchList, fetchReport,
   } = useHRStore();
+
+  useEffect(() => {
+    fetchBatchList();
+  }, [fetchBatchList]);
 
   const deptMap = new Map(departments.map(d => [d.id, d.name]));
   const empMap = new Map(employees.map(e => [e.id, e.name]));
@@ -98,29 +109,13 @@ export default function Home() {
   const genId = () => `CHG_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
   const handleFile = useCallback((file: File) => {
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: (results) => {
-        const parsed: EmployeeChange[] = results.data.map((row: any) => ({
-          id: genId(),
-          employeeId: row.employeeId || row['员工编号'] || '',
-          employeeName: row.employeeName || row['员工姓名'] || '',
-          sourceDepartment: row.sourceDepartment || row['原部门'] || '',
-          targetDepartment: row.targetDepartment || row['新部门'] || '',
-          targetPosition: row.targetPosition || row['新岗位'] || '',
-          effectiveDate: row.effectiveDate || row['生效日期'] || '',
-          newManagerId: row.newManagerId || row['新主管'] || '',
-          newManagerName: row.newManagerName || row['新主管姓名'] || '',
-          status: 'pending',
-        }));
-        setChanges(parsed);
-      },
-      error: (err) => {
-        console.error('Parse error:', err);
-      },
-    });
-  }, [setChanges]);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const csvText = e.target?.result as string;
+      runPrecheck(csvText, file.name);
+    };
+    reader.readAsText(file, 'UTF-8');
+  }, [runPrecheck]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -187,6 +182,11 @@ export default function Home() {
     setEditingChange(change);
     setFormData({ ...change });
     setShowAddModal(true);
+  };
+
+  const handleViewReport = async (batchId: string) => {
+    await fetchReport(batchId);
+    navigate('/report');
   };
 
   const getChangesByErrorType = (type: ValidationErrorType): EmployeeChange[] => {
@@ -320,13 +320,6 @@ export default function Home() {
               导入异动清单
             </h3>
             <div className={`${isDragOver ? 'dropzone-active' : 'dropzone'}`}>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                className="hidden"
-                onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
-              />
               <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-primary-100 to-primary-200 flex items-center justify-center">
                 <Upload className="w-8 h-8 text-primary-700" />
               </div>
@@ -342,14 +335,20 @@ export default function Home() {
                   下载模板
                 </button>
               </div>
-              <p className="text-xs text-slate-400 mt-4">支持 CSV、Excel 格式 | 单次最多 500 条</p>
+              <p className="text-xs text-slate-400 mt-4">支持 CSV 格式 | 单次最多 500 条</p>
             </div>
 
             <div className="mt-5 pt-5 border-t border-slate-100 space-y-2">
-              <button onClick={loadSampleData} className="w-full btn-secondary text-sm">
-                <RefreshCw className="w-4 h-4" />
-                加载示例数据
-              </button>
+              <div className="flex gap-2">
+                <button onClick={loadSampleData} className="flex-1 btn-secondary text-sm">
+                  <RefreshCw className="w-4 h-4" />
+                  加载示例数据
+                </button>
+                <button onClick={() => setShowHistoryModal(true)} className="btn-ghost text-sm border border-slate-200 px-3" title="查看历史批次">
+                  <History className="w-4 h-4" />
+                  <span className="ml-1 hidden sm:inline">历史批次</span>
+                </button>
+              </div>
               <button onClick={() => { setShowAddModal(true); setEditingChange(null); setFormData({}); }} className="w-full btn-ghost text-sm border border-dashed border-slate-300">
                 <Plus className="w-4 h-4" />
                 手动添加一条
@@ -541,6 +540,20 @@ export default function Home() {
         </div>
       </div>
 
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            handleFile(file);
+            if (fileInputRef.current) fileInputRef.current.value = '';
+          }
+        }}
+      />
+
       {showAddModal && (
         <div className="modal-overlay" onClick={() => { setShowAddModal(false); setEditingChange(null); }}>
           <div className="modal-content max-w-lg" onClick={e => e.stopPropagation()}>
@@ -607,6 +620,112 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {showHistoryModal && (
+        <div className="modal-overlay" onClick={() => setShowHistoryModal(false)}>
+          <div className="modal-content max-w-2xl max-h-[80vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+                  <History className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800">历史批次记录</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">共 {batchSummaryList.length} 条记录，点击行可查看详细报告</p>
+                </div>
+              </div>
+              <button onClick={() => setShowHistoryModal(false)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto scrollbar-thin">
+              {batchSummaryList.length === 0 ? (
+                <div className="p-16 text-center">
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-50 flex items-center justify-center">
+                    <Clock className="w-8 h-8 text-slate-300" />
+                  </div>
+                  <p className="text-sm font-medium text-slate-600 mb-1">暂无历史批次</p>
+                  <p className="text-xs text-slate-400">完成一次批量执行后会在此处显示</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100">
+                  {batchSummaryList.map((batch) => {
+                    const rate = batch.successRate != null ? Math.round(batch.successRate * 100) : 0;
+                    return (
+                      <button
+                        key={batch.batchId}
+                        onClick={() => handleViewReport(batch.batchId)}
+                        className="w-full p-4 text-left hover:bg-slate-50 transition-colors group"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Hash className="w-3.5 h-3.5 text-slate-400" />
+                              <span className="font-mono text-xs text-slate-500">{batch.batchId}</span>
+                              <span className={`px-2 py-0.5 text-[10px] rounded-full font-medium ${
+                                batch.status === 'completed' ? 'bg-success-100 text-success-700' :
+                                batch.status === 'failed' ? 'bg-danger-100 text-danger-700' :
+                                'bg-warning-100 text-warning-700'
+                              }`}>
+                                {batch.status === 'completed' ? '已完成' : batch.status === 'failed' ? '失败' : '处理中'}
+                              </span>
+                            </div>
+                            <h4 className="font-semibold text-slate-800 group-hover:text-primary-700 transition-colors truncate">
+                              {batch.batchName || '未命名批次'}
+                            </h4>
+                            <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
+                              <span className="flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                {batch.endTime || '-'}
+                              </span>
+                              {batch.operator && (
+                                <span>操作人：{batch.operator}</span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <div className="flex items-center gap-1">
+                              <BarChart3 className="w-3.5 h-3.5 text-slate-400" />
+                              <span className="text-sm font-bold text-slate-700">{batch.totalCount || 0}</span>
+                              <span className="text-xs text-slate-400">条</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <span className={`text-lg font-bold ${
+                                rate >= 90 ? 'text-success-600' : rate >= 70 ? 'text-warning-600' : 'text-danger-600'
+                              }`}>{rate}%</span>
+                              <span className="text-[10px] text-slate-400">成功率</span>
+                            </div>
+                            <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${
+                                  rate >= 90 ? 'bg-success-500' : rate >= 70 ? 'bg-warning-500' : 'bg-danger-500'
+                                }`}
+                                style={{ width: `${rate}%` }}
+                              />
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5">
+                              <span className="text-success-600">✓ {batch.successCount || 0}</span>
+                              <span className="text-danger-600">✗ {batch.failedCount || 0}</span>
+                              {batch.rolledBackCount > 0 && (
+                                <span className="text-amber-600">↩ {batch.rolledBackCount}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 rounded-b-2xl flex justify-end">
+              <button onClick={() => setShowHistoryModal(false)} className="btn-secondary">关闭</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <PrecheckModal />
     </div>
   );
 }

@@ -24,7 +24,15 @@ import {
   Info
 } from 'lucide-react';
 import { useHRStore } from '@/stores/hrStore';
-import type { RollbackRecord } from '../../shared/types';
+import type { RollbackRecord, ChangeFieldSnapshot } from '../../shared/types';
+
+const COMPARE_FIELDS: Array<{ key: keyof ChangeFieldSnapshot; label: string }> = [
+  { key: 'departmentName', label: '部门' },
+  { key: 'positionName', label: '岗位' },
+  { key: 'managerName', label: '主管' },
+  { key: 'costCenter', label: '成本中心' },
+  { key: 'attendanceGroup', label: '考勤组' },
+];
 
 export default function RollbackCenter() {
   const navigate = useNavigate();
@@ -36,12 +44,13 @@ export default function RollbackCenter() {
   const {
     rollbackRecords, fetchRollbackRecords, fetchRollbackRecord,
     executeRollback, isLoading, selectedRollbackRecord, setSelectedRollbackRecord,
-    fetchReport, currentExecutionResult,
+    fetchReport, currentExecutionResult, batchSummaryList, fetchBatchList,
   } = useHRStore();
 
   useEffect(() => {
     fetchRollbackRecords();
-  }, [fetchRollbackRecords]);
+    fetchBatchList();
+  }, [fetchRollbackRecords, fetchBatchList]);
 
   const handleSelectRecord = (record: RollbackRecord) => {
     setSelectedRecord(record);
@@ -55,9 +64,15 @@ export default function RollbackCenter() {
     setShowConfirmModal(false);
     if (res.success) {
       fetchRollbackRecords();
+      fetchBatchList();
       fetchRollbackRecord(selectedRecord.batchId);
       setSelectedRecord(null);
     }
+  };
+
+  const getBatchFailedCount = (batchId: string) => {
+    const batch = batchSummaryList.find(b => b.batchId === batchId);
+    return batch?.failedCount ?? 0;
   };
 
   const filteredRecords = filterRisk === 'all'
@@ -65,6 +80,8 @@ export default function RollbackCenter() {
     : rollbackRecords.filter(r => r.riskLevel === filterRisk);
 
   const activeRecord = selectedRollbackRecord || selectedRecord;
+
+  const isRolledBack = (record: RollbackRecord) => record.status === 'rolled_back';
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -87,7 +104,7 @@ export default function RollbackCenter() {
               <option value="high">高风险</option>
             </select>
           </div>
-          <button onClick={fetchRollbackRecords} className="btn-secondary">
+          <button onClick={() => { fetchRollbackRecords(); fetchBatchList(); }} className="btn-secondary">
             <RefreshCw className="w-4 h-4" />
             刷新
           </button>
@@ -158,84 +175,100 @@ export default function RollbackCenter() {
               </button>
             </div>
           ) : (
-            filteredRecords.map((record, idx) => (
-              <button
-                key={record.batchId}
-                onClick={() => handleSelectRecord(record)}
-                className={`w-full text-left card p-5 transition-all duration-300 animate-slide-up hover:shadow-card-hover ${
-                  activeRecord?.batchId === record.batchId ? 'ring-2 ring-primary-500 shadow-card-hover' : ''
-                }`}
-                style={{ animationDelay: `${(idx % 6) * 0.05}s` }}
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center shadow-sm ${
-                      record.status === 'rolled_back'
-                        ? 'bg-slate-100 text-slate-600'
-                        : record.riskLevel === 'high'
-                        ? 'bg-danger-100 text-danger-700'
-                        : record.riskLevel === 'medium'
-                        ? 'bg-warning-100 text-warning-700'
-                        : 'bg-success-100 text-success-700'
-                    }`}>
-                      {record.status === 'rolled_back' ? (
-                        <CheckCircle2 className="w-5.5 h-5.5" />
-                      ) : (
-                        <GitPullRequest className="w-5.5 h-5.5" />
-                      )}
+            filteredRecords.map((record, idx) => {
+              const rolled = isRolledBack(record);
+              const failedCount = getBatchFailedCount(record.batchId);
+              return (
+                <button
+                  key={record.batchId}
+                  onClick={() => handleSelectRecord(record)}
+                  className={`w-full text-left card p-5 transition-all duration-300 animate-slide-up hover:shadow-card-hover ${
+                    activeRecord?.batchId === record.batchId
+                      ? rolled ? 'ring-2 ring-slate-400 shadow-card-hover' : 'ring-2 ring-primary-500 shadow-card-hover'
+                      : ''
+                  } ${rolled ? 'opacity-80 bg-slate-50/60' : ''}`}
+                  style={{ animationDelay: `${(idx % 6) * 0.05}s` }}
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-11 h-11 rounded-xl flex items-center justify-center shadow-sm ${
+                        rolled
+                          ? 'bg-slate-200 text-slate-600'
+                          : record.riskLevel === 'high'
+                          ? 'bg-danger-100 text-danger-700'
+                          : record.riskLevel === 'medium'
+                          ? 'bg-warning-100 text-warning-700'
+                          : 'bg-success-100 text-success-700'
+                      }`}>
+                        {rolled ? (
+                          <CheckCircle2 className="w-5.5 h-5.5" />
+                        ) : (
+                          <GitPullRequest className="w-5.5 h-5.5" />
+                        )}
+                      </div>
+                      <div>
+                        <div className="font-bold text-slate-800 flex items-center gap-2">
+                          {record.batchName}
+                          {rolled && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 font-semibold">
+                              已撤回{record.rolledBackCount}条
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-slate-500 font-mono">{record.batchId.slice(-10)}</div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="font-bold text-slate-800">{record.batchName}</div>
-                      <div className="text-xs text-slate-500 font-mono">{record.batchId.slice(-10)}</div>
-                    </div>
+                    <ChevronRight className={`w-5 h-5 transition-all ${
+                      activeRecord?.batchId === record.batchId
+                        ? rolled ? 'text-slate-500 translate-x-1' : 'text-primary-600 translate-x-1'
+                        : 'text-slate-400'
+                    }`} />
                   </div>
-                  <ChevronRight className={`w-5 h-5 transition-all ${
-                    activeRecord?.batchId === record.batchId ? 'text-primary-600 translate-x-1' : 'text-slate-400'
-                  }`} />
-                </div>
 
-                <div className="grid grid-cols-3 gap-2 mb-3">
-                  <div className="p-2 rounded-lg bg-slate-50 text-center">
-                    <p className="text-lg font-bold text-slate-800">{record.changeCount}</p>
-                    <p className="text-[10px] text-slate-500">变更数</p>
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    <div className="p-2 rounded-lg bg-slate-50 text-center">
+                      <p className="text-lg font-bold text-slate-800">{record.changeCount}</p>
+                      <p className="text-[10px] text-slate-500">变更</p>
+                    </div>
+                    <div className="p-2 rounded-lg bg-success-50 text-center">
+                      <p className="text-lg font-bold text-success-700">{record.rolledBackCount}</p>
+                      <p className="text-[10px] text-slate-500">撤回</p>
+                    </div>
+                    <div className="p-2 rounded-lg bg-danger-50 text-center">
+                      <p className="text-lg font-bold text-danger-700">{failedCount}</p>
+                      <p className="text-[10px] text-slate-500">失败</p>
+                    </div>
                   </div>
-                  <div className={`p-2 rounded-lg text-center ${
+
+                  <div className={`p-2 rounded-lg mb-3 text-center ${
+                    rolled ? 'bg-slate-100' :
                     record.riskLevel === 'high' ? 'bg-danger-50' :
                     record.riskLevel === 'medium' ? 'bg-warning-50' : 'bg-success-50'
                   }`}>
                     <p className={`text-sm font-bold ${
+                      rolled ? 'text-slate-700' :
                       record.riskLevel === 'high' ? 'text-danger-700' :
                       record.riskLevel === 'medium' ? 'text-warning-700' : 'text-success-700'
                     }`}>
-                      {record.riskLevel === 'high' ? '高' : record.riskLevel === 'medium' ? '中' : '低'}风险
-                    </p>
-                    <p className="text-[10px] text-slate-500">等级</p>
-                  </div>
-                  <div className="p-2 rounded-lg bg-slate-50 text-center">
-                    <p className={`text-xs font-bold ${
-                      record.status === 'rolled_back' ? 'text-slate-600' :
-                      record.status === 'available' ? 'text-primary-700' : 'text-warning-700'
-                    }`}>
-                      {record.status === 'rolled_back' ? '已回滚' :
-                       record.status === 'available' ? '可撤回' :
+                      {rolled ? '已撤回' :
+                       record.status === 'available' ? `${record.riskLevel === 'high' ? '高' : record.riskLevel === 'medium' ? '中' : '低'}风险 · 可撤回` :
                        record.status === 'rollback_in_progress' ? '回滚中' : '回滚失败'}
                     </p>
-                    <p className="text-[10px] text-slate-500">状态</p>
                   </div>
-                </div>
 
-                <div className="flex items-center justify-between text-xs text-slate-500 pt-3 border-t border-slate-100">
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    {new Date(record.operationTime).toLocaleString('zh-CN')}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Users className="w-3 h-3" />
-                    {record.operator}
-                  </span>
-                </div>
-              </button>
-            ))
+                  <div className="flex items-center justify-between text-xs text-slate-500 pt-3 border-t border-slate-100">
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {new Date(record.operationTime).toLocaleString('zh-CN')}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Users className="w-3 h-3" />
+                      {record.operator}
+                    </span>
+                  </div>
+                </button>
+              );
+            })
           )}
         </div>
 
@@ -257,11 +290,11 @@ export default function RollbackCenter() {
             </div>
           ) : (
             <div className="space-y-5 animate-slide-up">
-              <div className="card p-6">
+              <div className={`card p-6 ${isRolledBack(activeRecord) ? 'bg-slate-50/60' : ''}`}>
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex items-center gap-4">
                     <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-md ${
-                      activeRecord.status === 'rolled_back'
+                      isRolledBack(activeRecord)
                         ? 'bg-slate-200 text-slate-600'
                         : activeRecord.riskLevel === 'high'
                         ? 'bg-gradient-to-br from-danger-400 to-danger-600 text-white'
@@ -272,7 +305,14 @@ export default function RollbackCenter() {
                       <Undo2 className="w-7 h-7" />
                     </div>
                     <div>
-                      <h3 className="text-xl font-bold text-slate-800">{activeRecord.batchName}</h3>
+                      <h3 className={`text-xl font-bold flex items-center gap-2 ${isRolledBack(activeRecord) ? 'text-slate-600' : 'text-slate-800'}`}>
+                        {activeRecord.batchName}
+                        {isRolledBack(activeRecord) && (
+                          <span className="text-xs px-2 py-1 rounded-full bg-slate-300 text-slate-800 font-semibold">
+                            已撤回{activeRecord.rolledBackCount}条
+                          </span>
+                        )}
+                      </h3>
                       <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
                         <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{new Date(activeRecord.operationTime).toLocaleString('zh-CN')}</span>
                         <span className="flex items-center gap-1"><Users className="w-3 h-3" />{activeRecord.operator}</span>
@@ -282,12 +322,20 @@ export default function RollbackCenter() {
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => { fetchReport(activeRecord.batchId); navigate('/report'); }}
-                      className="btn-secondary text-xs"
+                      className={`text-xs ${isRolledBack(activeRecord) ? 'btn-secondary opacity-70' : 'btn-secondary'}`}
                     >
                       <FileText className="w-3.5 h-3.5" />
                       查看报告
                     </button>
-                    {(activeRecord.status === 'available' || activeRecord.status === 'rollback_failed') && (
+                    {isRolledBack(activeRecord) ? (
+                      <button
+                        disabled
+                        className="text-xs btn-secondary cursor-not-allowed opacity-70 bg-slate-200 border-slate-300 text-slate-600"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        已撤回
+                      </button>
+                    ) : (activeRecord.status === 'available' || activeRecord.status === 'rollback_failed') && (
                       <button
                         onClick={() => setShowConfirmModal(true)}
                         disabled={isLoading}
@@ -300,7 +348,7 @@ export default function RollbackCenter() {
                   </div>
                 </div>
 
-                {activeRecord.riskLevel !== 'low' && activeRecord.status !== 'rolled_back' && (
+                {!isRolledBack(activeRecord) && activeRecord.riskLevel !== 'low' && (
                   <div className={`p-4 rounded-xl mb-6 flex items-start gap-3 ${
                     activeRecord.riskLevel === 'high'
                       ? 'bg-danger-50 border border-danger-200'
@@ -329,51 +377,88 @@ export default function RollbackCenter() {
                 )}
 
                 <div className="mb-6">
-                  <h4 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+                  <h4 className={`text-sm font-bold mb-3 flex items-center gap-2 ${isRolledBack(activeRecord) ? 'text-slate-600' : 'text-slate-800'}`}>
                     <Info className="w-4 h-4 text-info-600" />
                     撤回参考说明
                   </h4>
-                  <p className="text-sm text-slate-600 p-4 rounded-lg bg-slate-50 leading-relaxed">
-                    {activeRecord.rollbackReference}
-                  </p>
+                  <div className={`p-4 rounded-lg leading-relaxed space-y-2 ${isRolledBack(activeRecord) ? 'bg-slate-100' : 'bg-slate-50'}`}>
+                    <p className={`text-sm ${isRolledBack(activeRecord) ? 'text-slate-600' : 'text-slate-600'}`}>
+                      {activeRecord.rollbackReference}
+                    </p>
+                    {activeRecord.executedAt && (
+                      <div className={`flex items-center gap-2 pt-2 mt-2 border-t border-slate-200 text-xs ${isRolledBack(activeRecord) ? 'text-slate-500' : 'text-slate-500'}`}>
+                        <Clock className="w-3.5 h-3.5" />
+                        <span className="font-semibold">执行时间：</span>
+                        <span>{new Date(activeRecord.executedAt).toLocaleString('zh-CN')}</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div>
-                  <h4 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
-                    <GitPullRequest className="w-4 h-4 text-primary-600" />
+                  <h4 className={`text-sm font-bold mb-3 flex items-center gap-2 ${isRolledBack(activeRecord) ? 'text-slate-600' : 'text-slate-800'}`}>
+                    <GitPullRequest className={`w-4 h-4 ${isRolledBack(activeRecord) ? 'text-slate-500' : 'text-primary-600'}`} />
                     变更前后对比（前 5 条）
                   </h4>
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {activeRecord.afterSnapshot.slice(0, 5).map((after, idx) => {
                       const before = activeRecord.beforeSnapshot[idx] || after;
+                      const originalData = before.originalData || (before as any);
+                      const newData = after.newData || (after as any);
+
                       return (
-                        <div key={after.id} className="grid grid-cols-[1fr_auto_1fr] gap-3 items-start p-4 rounded-xl border border-slate-100 bg-gradient-to-r from-slate-50/50 via-white to-primary-50/30">
-                          <div className="space-y-1.5">
-                            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">变更前</p>
-                            <CompareItem label="部门" value={before.sourceDepartment} />
-                            <CompareItem label="岗位" value={before.targetPosition} />
-                            <CompareItem label="主管" value={before.newManagerId} />
-                          </div>
-                          <div className="flex flex-col items-center pt-4">
-                            <ArrowRight className="w-5 h-5 text-primary-500" />
-                          </div>
-                          <div className="space-y-1.5">
-                            <p className="text-[10px] font-bold text-primary-700 uppercase tracking-wider">变更后</p>
-                            <CompareItem label="部门" value={after.sourceDepartment} changed />
-                            <CompareItem label="岗位" value={after.targetPosition} changed />
-                            <CompareItem label="主管" value={after.newManagerName || after.newManagerId} changed />
-                          </div>
-                          <div className="col-span-3 pt-2 mt-2 border-t border-slate-100 flex items-center justify-between">
-                            <span className="text-xs font-semibold text-slate-700">
+                        <div key={after.id} className={`p-4 rounded-xl border ${isRolledBack(activeRecord) ? 'border-slate-200 bg-slate-50/50' : 'border-slate-100 bg-gradient-to-r from-slate-50/50 via-white to-primary-50/30'}`}>
+                          <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-100">
+                            <span className={`text-xs font-semibold ${isRolledBack(activeRecord) ? 'text-slate-600' : 'text-slate-700'}`}>
                               {after.employeeName} ({after.employeeId})
                             </span>
                             <span className={`badge ${
                               after.status === 'success' ? 'bg-success-100 text-success-700' :
-                              after.status === 'rolled_back' ? 'bg-slate-100 text-slate-600' :
+                              after.status === 'rolled_back' ? 'bg-slate-200 text-slate-700' :
                               'bg-warning-100 text-warning-700'
                             }`}>
                               {after.status === 'success' ? '已生效' : after.status === 'rolled_back' ? '已回滚' : '状态未知'}
                             </span>
+                          </div>
+
+                          <div className="overflow-hidden rounded-lg border border-slate-200">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className={`text-[10px] font-bold uppercase tracking-wider ${isRolledBack(activeRecord) ? 'bg-slate-100 text-slate-600' : 'bg-slate-100 text-slate-600'}`}>
+                                  <th className="w-[90px] px-3 py-2 text-left border-r border-slate-200 shrink-0">字段</th>
+                                  <th className="px-3 py-2 text-left border-r border-slate-200 min-w-[120px]">变更前</th>
+                                  <th className="w-[44px] px-2 py-2 text-center border-r border-slate-200 shrink-0"></th>
+                                  <th className="px-3 py-2 text-left min-w-[120px]">变更后</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {COMPARE_FIELDS.map(({ key, label }) => {
+                                  const oldVal = originalData?.[key] ?? '';
+                                  const newVal = newData?.[key] ?? '';
+                                  const changed = String(oldVal ?? '') !== String(newVal ?? '');
+                                  return (
+                                    <tr key={key} className="border-t border-slate-100 last:border-t-0">
+                                      <td className={`px-3 py-2 text-xs font-semibold border-r border-slate-100 ${isRolledBack(activeRecord) ? 'text-slate-500 bg-slate-50' : 'text-slate-600 bg-slate-50'}`}>
+                                        {label}
+                                      </td>
+                                      <td className={`px-3 py-2 text-xs border-r border-slate-100 ${changed && !isRolledBack(activeRecord) ? 'text-slate-700' : 'text-slate-700'}`}>
+                                        <span className={`${changed && !isRolledBack(activeRecord) ? 'bg-success-100 text-success-800 px-2 py-0.5 rounded font-medium' : ''}`}>
+                                          {oldVal || '-'}
+                                        </span>
+                                      </td>
+                                      <td className="px-2 py-2 text-center border-r border-slate-100">
+                                        <ArrowRight className={`w-4 h-4 mx-auto ${changed && !isRolledBack(activeRecord) ? 'text-success-500' : 'text-slate-300'}`} />
+                                      </td>
+                                      <td className={`px-3 py-2 text-xs ${changed && !isRolledBack(activeRecord) ? 'text-slate-800' : 'text-slate-700'}`}>
+                                        <span className={`${changed && !isRolledBack(activeRecord) ? 'bg-success-100 text-success-800 px-2 py-0.5 rounded font-medium' : ''}`}>
+                                          {newVal || '-'}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
                           </div>
                         </div>
                       );
@@ -481,19 +566,6 @@ function StatCard({ label, value, icon: Icon, color, animateIdx }: {
           <Icon className="w-6 h-6" />
         </div>
       </div>
-    </div>
-  );
-}
-
-function CompareItem({ label, value, changed }: { label: string; value: string; changed?: boolean }) {
-  return (
-    <div className="flex items-center gap-2 text-xs">
-      <span className="text-slate-500 shrink-0">{label}:</span>
-      <span className={`font-medium truncate ${
-        changed ? 'text-primary-700 bg-primary-100/50 px-1.5 py-0.5 rounded' : 'text-slate-700'
-      }`}>
-        {value || '-'}
-      </span>
     </div>
   );
 }

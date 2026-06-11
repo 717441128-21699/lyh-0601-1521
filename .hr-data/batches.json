@@ -1,0 +1,240 @@
+{
+  "B20260612-905T": {
+    "id": "B20260612-905T",
+    "name": "2026年Q2组织调整-2026/6/12",
+    "status": "completed",
+    "config": {
+      "batchSize": 10,
+      "intervalMs": 500,
+      "retryCount": 1
+    },
+    "changes": [
+      {
+        "employeeId": "E010",
+        "employeeName": "郑小明",
+        "sourceDepartment": "D002",
+        "targetDepartment": "D003",
+        "targetPosition": "P015",
+        "effectiveDate": "2026-06-15",
+        "newManagerId": "E003",
+        "id": "CHG_1781210540904_ujhsw",
+        "status": "rolled_back",
+        "errors": [],
+        "newManagerName": "王强",
+        "originalData": {
+          "departmentId": "D002",
+          "departmentName": "前端开发组",
+          "positionId": "P004",
+          "positionName": "前端工程师",
+          "managerId": "E002",
+          "managerName": "李娜",
+          "costCenter": "CC-RD-001",
+          "attendanceGroup": "AT-TECH"
+        },
+        "newData": {
+          "departmentId": "D003",
+          "departmentName": "后端开发组",
+          "positionId": "P015",
+          "positionName": "后端工程师",
+          "managerId": "E003",
+          "managerName": "王强",
+          "costCenter": "CC-RD-001",
+          "attendanceGroup": "AT-TECH"
+        }
+      },
+      {
+        "employeeId": "E011",
+        "employeeName": "黄丽",
+        "sourceDepartment": "D002",
+        "targetDepartment": "D001",
+        "targetPosition": "P001",
+        "effectiveDate": "2026-06-15",
+        "newManagerId": "E001",
+        "id": "CHG_1781210540904_0y62w",
+        "status": "rolled_back",
+        "errors": [],
+        "newManagerName": "张伟",
+        "originalData": {
+          "departmentId": "D002",
+          "departmentName": "前端开发组",
+          "positionId": "P003",
+          "positionName": "高级前端工程师",
+          "managerId": "E002",
+          "managerName": "李娜",
+          "costCenter": "CC-RD-001",
+          "attendanceGroup": "AT-TECH"
+        },
+        "newData": {
+          "departmentId": "D001",
+          "departmentName": "技术研发部",
+          "positionId": "P001",
+          "positionName": "技术总监",
+          "managerId": "E001",
+          "managerName": "张伟",
+          "costCenter": "CC-RD-001",
+          "attendanceGroup": "AT-TECH"
+        }
+      },
+      {
+        "employeeId": "E013",
+        "employeeName": "何婷",
+        "sourceDepartment": "D005",
+        "targetDepartment": "D002",
+        "targetPosition": "P003",
+        "effectiveDate": "2026-06-20",
+        "newManagerId": "E002",
+        "id": "CHG_1781210540904_fq0d3",
+        "status": "rolled_back",
+        "errors": [],
+        "newManagerName": "李娜",
+        "originalData": {
+          "departmentId": "D005",
+          "departmentName": "产品经理组",
+          "positionId": "P009",
+          "positionName": "产品经理",
+          "managerId": "E005",
+          "managerName": "陈静",
+          "costCenter": "CC-PD-001",
+          "attendanceGroup": "AT-STD"
+        },
+        "newData": {
+          "departmentId": "D002",
+          "departmentName": "前端开发组",
+          "positionId": "P003",
+          "positionName": "高级前端工程师",
+          "managerId": "E002",
+          "managerName": "李娜",
+          "costCenter": "CC-RD-001",
+          "attendanceGroup": "AT-TECH"
+        }
+      },
+      {
+        "employeeId": "E015",
+        "employeeName": "谢雯",
+        "sourceDepartment": "D002",
+        "targetDepartment": "D005",
+        "targetPosition": "P009",
+        "effectiveDate": "2026-06-20",
+        "newManagerId": "E005",
+        "id": "CHG_1781210540904_36jnq",
+        "status": "rolled_back",
+        "errors": [],
+        "newManagerName": "陈静",
+        "originalData": {
+          "departmentId": "D002",
+          "departmentName": "前端开发组",
+          "positionId": "P004",
+          "positionName": "前端工程师",
+          "managerId": "E002",
+          "managerName": "李娜",
+          "costCenter": "CC-RD-001",
+          "attendanceGroup": "AT-TECH"
+        },
+        "newData": {
+          "departmentId": "D005",
+          "departmentName": "产品经理组",
+          "positionId": "P009",
+          "positionName": "产品经理",
+          "managerId": "E005",
+          "managerName": "陈静",
+          "costCenter": "CC-PD-001",
+          "attendanceGroup": "AT-STD"
+        }
+      },
+      {
+        "employeeId": "E017",
+        "employeeName": "刘梦琪",
+        "sourceDepartment": "D002",
+        "targetDepartment": "D004",
+        "targetPosition": "P010",
+        "effectiveDate": "2026-07-01",
+        "newManagerId": "E006",
+        "id": "CHG_1781210540904_nyks0",
+        "status": "rolled_back",
+        "errors": [],
+        "newManagerName": "赵敏",
+        "originalData": {
+          "departmentId": "D002",
+          "departmentName": "前端开发组",
+          "positionId": "P004",
+          "positionName": "前端工程师",
+          "managerId": "E002",
+          "managerName": "李娜",
+          "costCenter": "CC-RD-001",
+          "attendanceGroup": "AT-TECH"
+        },
+        "newData": {
+          "departmentId": "D004",
+          "departmentName": "产品设计部",
+          "positionId": "P010",
+          "positionName": "UI设计师",
+          "managerId": "E006",
+          "managerName": "赵敏",
+          "costCenter": "CC-PD-001",
+          "attendanceGroup": "AT-STD"
+        }
+      },
+      {
+        "employeeId": "E020",
+        "employeeName": "郭晓彤",
+        "sourceDepartment": "D007",
+        "targetDepartment": "D008",
+        "targetPosition": "P012",
+        "effectiveDate": "2026-07-05",
+        "newManagerId": "E008",
+        "id": "CHG_1781210540904_jpzhu",
+        "status": "rolled_back",
+        "errors": [],
+        "newManagerName": "周芳",
+        "originalData": {
+          "departmentId": "D007",
+          "departmentName": "市场营销部",
+          "positionId": "P014",
+          "positionName": "运营专员",
+          "managerId": "E007",
+          "managerName": "孙磊",
+          "costCenter": "CC-MK-001",
+          "attendanceGroup": "AT-SALES"
+        },
+        "newData": {
+          "departmentId": "D008",
+          "departmentName": "人力资源部",
+          "positionId": "P012",
+          "positionName": "HRBP",
+          "managerId": "E008",
+          "managerName": "周芳",
+          "costCenter": "CC-HR-001",
+          "attendanceGroup": "AT-STD"
+        }
+      },
+      {
+        "employeeId": "E007",
+        "employeeName": "孙磊",
+        "sourceDepartment": "D007",
+        "targetDepartment": "D004",
+        "targetPosition": "P007",
+        "effectiveDate": "2026-07-10",
+        "newManagerId": "E004",
+        "id": "CHG_1781210540904_p03sd",
+        "status": "failed",
+        "errors": [],
+        "newManagerName": "刘洋",
+        "failReason": "数据冲突：该员工存在未完成的异动审批单",
+        "originalData": {
+          "departmentId": "D007",
+          "departmentName": "市场营销部",
+          "positionId": "P011",
+          "positionName": "市场总监",
+          "managerId": "E004",
+          "managerName": "刘洋",
+          "costCenter": "CC-MK-001",
+          "attendanceGroup": "AT-SALES"
+        }
+      }
+    ],
+    "currentIndex": 7,
+    "operator": "HR专员",
+    "createdAt": "2026-06-11T20:44:04.211Z",
+    "completedAt": "2026-06-11T20:44:05.891Z"
+  }
+}

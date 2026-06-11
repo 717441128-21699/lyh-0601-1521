@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Play,
@@ -37,21 +37,86 @@ export default function BatchExecute() {
   const [selectedFailedIds, setSelectedFailedIds] = useState<Set<string>>(new Set());
   const [expandedFailed, setExpandedFailed] = useState<string | null>(null);
   const [executionLog, setExecutionLog] = useState<string[]>([]);
+  const [currentBatchId, setCurrentBatchId] = useState<string | null>(null);
+  const [batchStatus, setBatchStatus] = useState<string>('pending');
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const {
     validChanges, changes, validCount,
     executionConfig, setExecutionConfig,
     executeBatch, retryFailedItems,
     isLoading, currentExecutionResult,
+    executionId, getBatchStatus, fetchReport,
   } = useHRStore();
 
   const validItems = validChanges.length > 0 ? validChanges : changes.filter(c => !c.errors || c.errors.length === 0);
   const result = currentExecutionResult;
 
+  useEffect(() => {
+    if (executionId) {
+      setCurrentBatchId(executionId);
+    }
+  }, [executionId]);
+
+  useEffect(() => {
+    if (currentExecutionResult?.batchId && !currentBatchId) {
+      setCurrentBatchId(currentExecutionResult.batchId);
+    }
+  }, []);
+
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!currentBatchId) {
+      stopPolling();
+      return;
+    }
+
+    const doPoll = async () => {
+      const statusRes = await getBatchStatus(currentBatchId);
+      if (statusRes?.batch) {
+        setBatchStatus(statusRes.batch.status);
+        if (statusRes.batch.status === 'completed' || statusRes.batch.status === 'failed') {
+          stopPolling();
+        }
+      }
+    };
+
+    doPoll();
+
+    pollingRef.current = setInterval(doPoll, 2000);
+
+    return () => {
+      stopPolling();
+    };
+  }, [currentBatchId, getBatchStatus, stopPolling]);
+
+  useEffect(() => {
+    if (result?.batchId) {
+      if (result.successCount + result.failedCount >= result.totalCount) {
+        setBatchStatus('completed');
+        stopPolling();
+      } else {
+        setBatchStatus('running');
+      }
+    }
+  }, [result, stopPolling]);
+
   const runBatch = async () => {
+    if (batchStatus === 'running') return;
+    if (batchStatus === 'completed') {
+      navigate('/report');
+      return;
+    }
     setExecutionLog(['开始执行批量提交...', `批次名称：${batchName}`, `待处理数量：${validItems.length} 条`]);
     const res = await executeBatch(batchName);
     if (res) {
+      setBatchStatus('running');
       setExecutionLog(prev => [...prev,
         `执行完成！成功 ${res.successCount} 条，失败 ${res.failedCount} 条`,
         `批次ID：${res.batchId}`,
@@ -62,29 +127,111 @@ export default function BatchExecute() {
   };
 
   const retryAll = async () => {
-    if (!result) return;
+    if (!result || !currentBatchId) return;
     setExecutionLog(prev => [...prev, '---', `开始重试 ${result.failedCount} 条失败记录...`]);
     const res = await retryFailedItems(result.batchId);
     if (res) {
       setExecutionLog(prev => [...prev,
         `重试完成！当前成功 ${res.successCount} 条，剩余失败 ${res.failedCount} 条`,
       ]);
+      await fetchReport(currentBatchId);
     }
   };
 
   const retrySelected = async () => {
-    if (!result || selectedFailedIds.size === 0) return;
+    if (!result || selectedFailedIds.size === 0 || !currentBatchId) return;
     setExecutionLog(prev => [...prev, '---', `开始重试选中的 ${selectedFailedIds.size} 条记录...`]);
     const res = await retryFailedItems(result.batchId, Array.from(selectedFailedIds));
     if (res) {
       setSelectedFailedIds(new Set());
       setExecutionLog(prev => [...prev, `重试完成！`]);
+      await fetchReport(currentBatchId);
     }
   };
 
-  const progressPercent = result ? Math.round((result.successCount + result.failedCount) / result.totalCount * 100) : 0;
-  const successPercent = result && result.totalCount > 0 ? Math.round(result.successCount / result.totalCount * 100) : 0;
-  const failedPercent = result && result.totalCount > 0 ? Math.round(result.failedCount / result.totalCount * 100) : 0;
+  const retrySingle = async (itemId: string) => {
+    if (!result || !currentBatchId) return;
+    setExecutionLog(prev => [...prev, '---', `重试单条记录：${itemId}`]);
+    const res = await retryFailedItems(result.batchId, [itemId]);
+    if (res) {
+      setExecutionLog(prev => [...prev, `单条重试完成！`]);
+      await fetchReport(currentBatchId);
+    }
+  };
+
+  const totalCount = result?.totalCount || 0;
+  const successCount = result?.successCount || 0;
+  const failedCount = result?.failedCount || 0;
+  const pendingCount = totalCount - successCount - failedCount;
+  const progressPercent = totalCount > 0 ? Math.round((successCount + failedCount) / totalCount * 100) : 0;
+  const successPercent = totalCount > 0 ? Math.round(successCount / totalCount * 100) : 0;
+  const failedPercent = totalCount > 0 ? Math.round(failedCount / totalCount * 100) : 0;
+  const pendingPercent = totalCount > 0 ? Math.round(pendingCount / totalCount * 100) : 0;
+
+  const displayBatchId = currentBatchId || executionId || result?.batchId;
+  const hasBatch = !!displayBatchId;
+
+  const getStatusLabel = () => {
+    if (!hasBatch) return '待提交';
+    switch (batchStatus) {
+      case 'running': return '执行中';
+      case 'completed': return '已完成';
+      case 'failed': return '已失败';
+      case 'pending': return '待提交';
+      default: return '待提交';
+    }
+  };
+
+  const getStatusColor = () => {
+    if (!hasBatch) return 'text-slate-500 bg-slate-100';
+    switch (batchStatus) {
+      case 'running': return 'text-primary-700 bg-primary-100';
+      case 'completed': return 'text-success-700 bg-success-100';
+      case 'failed': return 'text-danger-700 bg-danger-100';
+      default: return 'text-slate-500 bg-slate-100';
+    }
+  };
+
+  const getButtonConfig = () => {
+    if (!hasBatch) {
+      return {
+        onClick: runBatch,
+        disabled: isLoading || validItems.length === 0,
+        label: '开始批量提交',
+        icon: isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />,
+        className: 'btn-success',
+      };
+    }
+    if (batchStatus === 'running') {
+      return {
+        onClick: () => {},
+        disabled: true,
+        label: '执行中...',
+        icon: <Loader2 className="w-4 h-4 animate-spin" />,
+        className: 'btn-success',
+      };
+    }
+    if (batchStatus === 'completed') {
+      return {
+        onClick: () => navigate('/report'),
+        disabled: false,
+        label: '查看报告',
+        icon: <FileText className="w-4 h-4" />,
+        className: 'btn-primary',
+      };
+    }
+    return {
+      onClick: runBatch,
+      disabled: isLoading || validItems.length === 0,
+      label: '开始批量提交',
+      icon: isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />,
+      className: 'btn-success',
+    };
+  };
+
+  const buttonConfig = getButtonConfig();
+
+  const displayBatchName = result?.batchName || batchName;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -130,12 +277,35 @@ export default function BatchExecute() {
               <div className="grid grid-cols-2 gap-5">
                 <div className="col-span-2">
                   <label className="label">批次名称</label>
-                  <input
-                    type="text"
-                    className="input-base"
-                    value={batchName}
-                    onChange={e => setBatchName(e.target.value)}
-                  />
+                  {hasBatch ? (
+                    <div className="space-y-2">
+                      <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs text-slate-500 mb-0.5">批次号</p>
+                            <p className="font-mono text-sm font-semibold text-primary-700">{displayBatchId}</p>
+                          </div>
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${getStatusColor()}`}>
+                            {getStatusLabel()}
+                          </span>
+                        </div>
+                      </div>
+                      <input
+                        type="text"
+                        className="input-base bg-slate-50 cursor-not-allowed"
+                        value={displayBatchName}
+                        readOnly
+                        disabled
+                      />
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      className="input-base"
+                      value={batchName}
+                      onChange={e => setBatchName(e.target.value)}
+                    />
+                  )}
                 </div>
 
                 <ConfigItem
@@ -198,21 +368,55 @@ export default function BatchExecute() {
               <div className="flex items-center justify-between mb-5">
                 <div>
                   <h3 className="text-base font-bold text-slate-800">执行进度</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {result ? `批次 ${result.batchId}` : validItems.length > 0 ? `待提交 ${validItems.length} 条异动数据` : '暂无可提交数据'}
+                  <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                    {hasBatch ? (
+                      <>
+                        <span>批次号：<span className="font-mono font-semibold text-primary-700">{displayBatchId}</span></span>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold" style={{
+                          backgroundColor: batchStatus === 'running' ? '#dbeafe' : batchStatus === 'completed' ? '#dcfce7' : batchStatus === 'failed' ? '#fee2e2' : '#f1f5f9',
+                          color: batchStatus === 'running' ? '#1d4ed8' : batchStatus === 'completed' ? '#15803d' : batchStatus === 'failed' ? '#b91c1c' : '#64748b'
+                        }}>
+                          {getStatusLabel()}
+                        </span>
+                        {result?.batchName && <span>· {result.batchName}</span>}
+                      </>
+                    ) : (
+                      validItems.length > 0 ? `待提交 ${validItems.length} 条异动数据` : '暂无可提交数据'
+                    )}
                   </p>
                 </div>
-                {!result && validItems.length > 0 && (
+                {!result && validItems.length > 0 && !hasBatch && (
                   <button
-                    onClick={runBatch}
-                    disabled={isLoading}
-                    className="btn-success"
+                    onClick={buttonConfig.onClick}
+                    disabled={buttonConfig.disabled}
+                    className={buttonConfig.className}
                   >
-                    {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                    开始批量提交
+                    {buttonConfig.icon}
+                    {buttonConfig.label}
                   </button>
                 )}
-                {result && (
+                {hasBatch && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={buttonConfig.onClick}
+                      disabled={buttonConfig.disabled}
+                      className={buttonConfig.className}
+                    >
+                      {buttonConfig.icon}
+                      {buttonConfig.label}
+                    </button>
+                    {batchStatus === 'completed' && (
+                      <button onClick={() => {
+                        setCurrentBatchId(null);
+                        setBatchStatus('pending');
+                      }} className="btn-secondary text-xs">
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        新批次
+                      </button>
+                    )}
+                  </div>
+                )}
+                {!hasBatch && result && (
                   <div className="flex items-center gap-2">
                     <button onClick={runBatch} className="btn-secondary text-xs">
                       <RefreshCw className="w-3.5 h-3.5" />
@@ -226,25 +430,25 @@ export default function BatchExecute() {
                 <>
                   <div className="grid grid-cols-3 gap-4 mb-5">
                     <ProgressMiniCard
-                      label="总进度"
-                      value={`${result.successCount + result.failedCount}/${result.totalCount}`}
-                      percent={progressPercent}
-                      color="primary"
-                      icon={Target}
-                    />
-                    <ProgressMiniCard
                       label="成功"
-                      value={`${result.successCount}条`}
+                      value={`${successCount}条`}
                       percent={successPercent}
                       color="success"
                       icon={CheckCircle2}
                     />
                     <ProgressMiniCard
                       label="失败"
-                      value={`${result.failedCount}条`}
+                      value={`${failedCount}条`}
                       percent={failedPercent}
                       color="danger"
                       icon={XCircle}
+                    />
+                    <ProgressMiniCard
+                      label="待处理"
+                      value={`${pendingCount}条`}
+                      percent={pendingPercent}
+                      color="primary"
+                      icon={Clock}
                     />
                   </div>
 
@@ -258,9 +462,14 @@ export default function BatchExecute() {
                         className="absolute top-0 h-full bg-gradient-to-r from-danger-400 to-danger-600 transition-all duration-500"
                         style={{ width: `${failedPercent}%`, left: `${successPercent}%` }}
                       />
+                      <div
+                        className="absolute top-0 h-full bg-gradient-to-r from-primary-300 to-primary-500 transition-all duration-500"
+                        style={{ width: `${pendingPercent}%`, left: `${successPercent + failedPercent}%` }}
+                      />
                     </div>
                     <div className="flex items-center justify-between text-xs text-slate-500">
                       <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-success-500" /> 成功 {successPercent}%</span>
+                      <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-primary-400" /> 待处理 {pendingPercent}%</span>
                       <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-danger-500" /> 失败 {failedPercent}%</span>
                     </div>
                   </div>
@@ -367,7 +576,7 @@ export default function BatchExecute() {
                           {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
                         </button>
                         <button
-                          onClick={() => retryFailedItems(result.batchId, [item.id])}
+                          onClick={() => retrySingle(item.id)}
                           className="btn-secondary text-xs"
                           disabled={isLoading}
                         >

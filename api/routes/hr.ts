@@ -1,11 +1,52 @@
 import { Router } from 'express';
-import type { ValidateRequest, PreviewRequest, ExecuteRequest } from '../../shared/types';
+import type {
+  ValidateRequest,
+  PreviewRequest,
+  ExecuteRequest,
+  ApplyMappingRequest,
+} from '../../shared/types';
 import { validationService } from '../services/ValidationService';
 import { impactAnalysisService } from '../services/ImpactAnalysisService';
 import { batchExecutionService } from '../services/BatchExecutionService';
+import { importPrecheckService } from '../services/ImportPrecheckService';
 import { DEPARTMENTS, POSITIONS, EMPLOYEES } from '../data/masterData';
 
 const router = Router();
+
+router.post('/precheck', (req, res) => {
+  try {
+    const { csvContent, filename } = req.body as { csvContent: string; filename?: string };
+    if (!csvContent) {
+      return res.status(400).json({ error: 'CSV 内容不能为空' });
+    }
+    const result = importPrecheckService.precheckCSV(csvContent, filename);
+    res.json(result);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || '数据预检服务异常' });
+  }
+});
+
+router.post('/apply-mapping', (req, res) => {
+  try {
+    const { csvContent, mapping, dateOverrides } = req.body as {
+      csvContent: string;
+    } & ApplyMappingRequest;
+    if (!csvContent || !mapping) {
+      return res.status(400).json({ error: '参数错误' });
+    }
+    const changes = importPrecheckService.applyMappingAndParse(csvContent, mapping, dateOverrides);
+    res.json({ changes });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || '字段映射应用失败' });
+  }
+});
+
+router.get('/template', (_req, res) => {
+  const csv = importPrecheckService.generateTemplateCSV();
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="HR异动导入模板.csv"');
+  res.send('\uFEFF' + csv);
+});
 
 router.post('/validate', (req, res) => {
   try {
@@ -42,11 +83,16 @@ router.post('/preview', (req, res) => {
 
 router.post('/execute', async (req, res) => {
   try {
-    const { changes, config, batchName } = req.body as ExecuteRequest;
+    const { changes, config, batchName, resumeBatchId } = req.body as ExecuteRequest;
     if (!changes || !Array.isArray(changes) || !config) {
       return res.status(400).json({ error: '请求参数错误' });
     }
-    const batchId = batchExecutionService.createBatch(changes, config, batchName);
+    const batchId = batchExecutionService.getOrCreateBatch(
+      resumeBatchId,
+      changes,
+      config,
+      batchName
+    );
     res.json({ executionId: batchId, config });
 
     setImmediate(async () => {
@@ -74,23 +120,49 @@ router.post('/execute/:batchId', async (req, res) => {
 router.get('/status/:batchId', (req, res) => {
   try {
     const { batchId } = req.params;
+    const status = batchExecutionService.getBatchStatus(batchId);
+    if (!status.batch) {
+      return res.status(404).json({ error: '批次不存在' });
+    }
+    res.json(status);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/batch/:batchId', (req, res) => {
+  try {
+    const { batchId } = req.params;
     const batch = batchExecutionService.getBatch(batchId);
-    const result = batchExecutionService.getResult(batchId);
     if (!batch) {
       return res.status(404).json({ error: '批次不存在' });
     }
-    res.json({
-      batch: {
-        id: batch.id,
-        name: batch.name,
-        status: batch.status,
-        config: batch.config,
-        currentIndex: batch.currentIndex,
-        total: batch.changes.length,
-        createdAt: batch.createdAt,
-      },
-      result,
+    res.json({ batch });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/batches', (_req, res) => {
+  try {
+    const results = batchExecutionService.getAllResults();
+    const rollbacks = batchExecutionService.getAllRollbackRecords();
+    const batches = results.map((r) => {
+      const rollback = rollbacks.find((rb) => rb.batchId === r.batchId);
+      return {
+        batchId: r.batchId,
+        batchName: r.batchName,
+        totalCount: r.totalCount,
+        successCount: r.successCount,
+        failedCount: r.failedCount,
+        rolledBackCount: r.rolledBackCount,
+        successRate: r.totalCount > 0 ? Math.round(((r.successCount + r.rolledBackCount) / r.totalCount) * 100) : 0,
+        status: rollback?.status || 'available',
+        endTime: r.endTime,
+        operator: r.operator,
+      };
     });
+    res.json(batches);
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -112,10 +184,11 @@ router.get('/report/:batchId', (req, res) => {
     const { batchId } = req.params;
     const result = batchExecutionService.getResult(batchId);
     const rollbackInfo = batchExecutionService.getRollbackRecord(batchId);
+    const batchInfo = batchExecutionService.getBatch(batchId);
     if (!result) {
       return res.status(404).json({ error: '报告不存在' });
     }
-    res.json({ result, rollbackInfo });
+    res.json({ result, rollbackInfo, batchInfo });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -143,10 +216,11 @@ router.get('/rollback/:batchId', (req, res) => {
   try {
     const { batchId } = req.params;
     const record = batchExecutionService.getRollbackRecord(batchId);
+    const result = batchExecutionService.getResult(batchId);
     if (!record) {
       return res.status(404).json({ error: '回滚记录不存在' });
     }
-    res.json(record);
+    res.json({ record, result });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
