@@ -54,6 +54,12 @@ export default function ReportCenter() {
     fetchAllReports();
   }, [fetchBatchList, fetchAllReports]);
 
+  useEffect(() => {
+    if (currentExecutionResult?.batchId && !selectedBatch) {
+      setSelectedBatch(currentExecutionResult.batchId);
+    }
+  }, [currentExecutionResult, selectedBatch]);
+
   const displayResult = selectedBatch
     ? allResults.find(r => r.batchId === selectedBatch)
     : currentExecutionResult || allResults[0];
@@ -139,11 +145,14 @@ export default function ReportCenter() {
             value={selectedBatch || displayResult?.batchId || ''}
             onChange={e => setSelectedBatch(e.target.value)}
           >
-            {batchSummaryList.map(b => (
-              <option key={b.batchId} value={b.batchId}>
-                {b.batchName} - 总数{b.totalCount}/成功{b.successCount}/失败{b.failedCount}/撤回{b.rolledBackCount} ({new Date(b.endTime).toLocaleDateString('zh-CN')}) - {b.operator}
-              </option>
-            ))}
+            {batchSummaryList.map(b => {
+              const successRate = b.totalCount > 0 ? Math.round(b.successCount / b.totalCount * 100) : 0;
+              return (
+                <option key={b.batchId} value={b.batchId}>
+                  {b.batchName} - 总数{b.totalCount}/成功{b.successCount}/失败{b.failedCount}/撤回{b.rolledBackCount}（成功率{successRate}%）({new Date(b.endTime).toLocaleDateString('zh-CN')}) - {b.operator}
+                </option>
+              );
+            })}
           </select>
         </div>
       )}

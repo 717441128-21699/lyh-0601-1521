@@ -63,10 +63,12 @@ export default function RollbackCenter() {
     setRollbackResult(res);
     setShowConfirmModal(false);
     if (res.success) {
-      fetchRollbackRecords();
-      fetchBatchList();
-      fetchRollbackRecord(selectedRecord.batchId);
+      await fetchRollbackRecords();
+      await fetchBatchList();
+      await fetchRollbackRecord(selectedRecord.batchId);
+      await fetchReport(selectedRecord.batchId);
       setSelectedRecord(null);
+      navigate('/report');
     }
   };
 
@@ -401,10 +403,13 @@ export default function RollbackCenter() {
                     变更前后对比（前 5 条）
                   </h4>
                   <div className="space-y-3">
-                    {activeRecord.afterSnapshot.slice(0, 5).map((after, idx) => {
-                      const before = activeRecord.beforeSnapshot[idx] || after;
-                      const originalData = before.originalData || (before as any);
-                      const newData = after.newData || (after as any);
+                    {activeRecord.afterSnapshot
+                      .filter(a => a.status === 'success' || a.status === 'rolled_back')
+                      .slice(0, 5)
+                      .map((after) => {
+                        const before = activeRecord.beforeSnapshot.find(b => b.employeeId === after.employeeId) || after;
+                        const originalData = before.originalData || (before as any);
+                        const newData = after.newData || (after as any);
 
                       return (
                         <div key={after.id} className={`p-4 rounded-xl border ${isRolledBack(activeRecord) ? 'border-slate-200 bg-slate-50/50' : 'border-slate-100 bg-gradient-to-r from-slate-50/50 via-white to-primary-50/30'}`}>

@@ -42,6 +42,11 @@ export default function PrecheckModal() {
   } = useHRStore();
 
   const [activeTab, setActiveTab] = useState<'mapping' | 'preview' | 'issues'>('mapping');
+  const [dateFormats, setDateFormats] = useState<Record<string, string>>({});
+
+  const updateDateFormat = (sourceColumn: string, format: string) => {
+    setDateFormats(prev => ({ ...prev, [sourceColumn]: format }));
+  };
 
   const issues = useMemo(() => {
     if (!precheckResult?.rows) return [];
@@ -99,7 +104,13 @@ export default function PrecheckModal() {
     const mapping = precheckMapping
       .filter((m) => m.targetField && m.sourceColumn)
       .map((m) => ({ sourceColumn: m.sourceColumn, targetField: m.targetField }));
-    await applyMappingAndImport(mapping);
+    const dateOverrides = Object.entries(dateFormats)
+      .filter(([, format]) => format)
+      .map(([sourceColumn, format]) => {
+        const mapped = precheckMapping.find(m => m.sourceColumn === sourceColumn);
+        return { field: mapped?.targetField || sourceColumn, format };
+      });
+    await applyMappingAndImport(mapping, dateOverrides);
   };
 
   if (!precheckOpen || !precheckResult) return null;
@@ -179,6 +190,8 @@ export default function PrecheckModal() {
                     key={`${m.sourceColumn}-${idx}`}
                     mapping={m}
                     onChange={updateMapping}
+                    onFormatChange={updateDateFormat}
+                    dateFormat={dateFormats[m.sourceColumn]}
                   />
                 ))}
               </div>
@@ -343,9 +356,13 @@ export default function PrecheckModal() {
 function MappingRow({
   mapping,
   onChange,
+  onFormatChange,
+  dateFormat,
 }: {
   mapping: PrecheckColumnMapping;
   onChange: (source: string, target: string) => void;
+  onFormatChange?: (source: string, format: string) => void;
+  dateFormat?: string;
 }) {
   if (!mapping.sourceColumn) {
     return (
@@ -381,10 +398,20 @@ function MappingRow({
     : '未映射';
   const isRequired = mapping.required || TARGET_FIELDS[mapping.targetField]?.required;
   const isOk = !!mapping.targetField;
+  const isDateField = mapping.targetField === 'effectiveDate';
+
+  const DATE_FORMAT_OPTIONS = [
+    { value: '', label: '自动检测' },
+    { value: 'YYYY-MM-DD', label: 'YYYY-MM-DD（如 2026-06-12）' },
+    { value: 'YYYY/MM/DD', label: 'YYYY/MM/DD（如 2026/6/12）' },
+    { value: 'YYYY.MM.DD', label: 'YYYY.MM.DD（如 2026.06.12）' },
+    { value: 'MM-DD-YYYY', label: 'MM-DD-YYYY（如 06-12-2026）' },
+    { value: 'YYYY年MM月DD日', label: 'YYYY年MM月DD日（如 2026年6月12日）' },
+  ];
 
   return (
     <div
-      className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${
+      className={`flex flex-col gap-3 p-3 rounded-lg border transition-all ${
         isOk
           ? 'bg-green-50/40 border-green-200'
           : isRequired
@@ -392,47 +419,69 @@ function MappingRow({
             : 'bg-slate-50 border-slate-200'
       }`}
     >
-      {FORMAT_ICONS[mapping.targetField] || <Columns3 className="w-4 h-4 text-slate-400" />}
+      <div className="flex items-center gap-3">
+        {FORMAT_ICONS[mapping.targetField] || <Columns3 className="w-4 h-4 text-slate-400" />}
 
-      <div className="flex-1 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3">
-        <div>
-          <div className="font-mono text-xs text-slate-500 mb-0.5">原始列名</div>
-          <div className="font-medium text-slate-800 truncate">{mapping.sourceColumn}</div>
-          {mapping.sampleValue && (
-            <div className="text-xs text-slate-500 mt-0.5 truncate">
-              示例：<span className="font-mono">{mapping.sampleValue}</span>
-            </div>
-          )}
-        </div>
-
-        <ArrowRightLeft className="w-4 h-4 text-slate-400 flex-shrink-0" />
-
-        <div>
-          <div className="text-xs text-slate-500 mb-0.5">
-            目标字段 {isRequired && <span className="text-red-500">*</span>}
+        <div className="flex-1 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3">
+          <div>
+            <div className="font-mono text-xs text-slate-500 mb-0.5">原始列名</div>
+            <div className="font-medium text-slate-800 truncate">{mapping.sourceColumn}</div>
+            {mapping.sampleValue && (
+              <div className="text-xs text-slate-500 mt-0.5 truncate">
+                示例：<span className="font-mono">{mapping.sampleValue}</span>
+              </div>
+            )}
           </div>
-          <select
-            className="input-base text-sm"
-            value={mapping.targetField}
-            onChange={(e) => onChange(mapping.sourceColumn, e.target.value)}
-          >
-            <option value="">未映射（忽略此列）</option>
-            {TARGET_FIELD_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
+
+          <ArrowRightLeft className="w-4 h-4 text-slate-400 flex-shrink-0" />
+
+          <div>
+            <div className="text-xs text-slate-500 mb-0.5">
+              目标字段 {isRequired && <span className="text-red-500">*</span>}
+            </div>
+            <select
+              className="input-base text-sm"
+              value={mapping.targetField}
+              onChange={(e) => onChange(mapping.sourceColumn, e.target.value)}
+            >
+              <option value="">未映射（忽略此列）</option>
+              {TARGET_FIELD_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex-shrink-0">
+          {isOk ? (
+            <CheckCircle2 className="w-5 h-5 text-green-500" />
+          ) : isRequired ? (
+            <XCircle className="w-5 h-5 text-red-500" />
+          ) : null}
         </div>
       </div>
 
-      <div className="flex-shrink-0">
-        {isOk ? (
-          <CheckCircle2 className="w-5 h-5 text-green-500" />
-        ) : isRequired ? (
-          <XCircle className="w-5 h-5 text-red-500" />
-        ) : null}
-      </div>
+      {isDateField && onFormatChange && (
+        <div className="flex items-center gap-3 pt-2 mt-2 border-t border-dashed border-slate-200">
+          <CalendarRange className="w-4 h-4 text-amber-500 flex-shrink-0" />
+          <div className="flex-1">
+            <div className="text-xs text-slate-500 mb-1">日期格式（如格式不对请手动选择）</div>
+            <select
+              className="input-base text-sm max-w-sm"
+              value={dateFormat || ''}
+              onChange={(e) => onFormatChange(mapping.sourceColumn, e.target.value)}
+            >
+              {DATE_FORMAT_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

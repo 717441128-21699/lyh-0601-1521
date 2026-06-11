@@ -114,15 +114,18 @@ export default function BatchExecute() {
       return;
     }
     setExecutionLog(['开始执行批量提交...', `批次名称：${batchName}`, `待处理数量：${validItems.length} 条`]);
-    const res = await executeBatch(batchName);
+    const resumeId = currentBatchId || executionId || undefined;
+    const res = await executeBatch(batchName, resumeId);
     if (res) {
       setBatchStatus('running');
+      setCurrentBatchId(res.batchId);
       setExecutionLog(prev => [...prev,
         `执行完成！成功 ${res.successCount} 条，失败 ${res.failedCount} 条`,
         `批次ID：${res.batchId}`,
         `开始时间：${new Date(res.startTime).toLocaleString('zh-CN')}`,
         `结束时间：${new Date(res.endTime).toLocaleString('zh-CN')}`,
       ]);
+      fetchReport(res.batchId);
     }
   };
 
@@ -162,11 +165,11 @@ export default function BatchExecute() {
   const totalCount = result?.totalCount || 0;
   const successCount = result?.successCount || 0;
   const failedCount = result?.failedCount || 0;
-  const pendingCount = totalCount - successCount - failedCount;
-  const progressPercent = totalCount > 0 ? Math.round((successCount + failedCount) / totalCount * 100) : 0;
-  const successPercent = totalCount > 0 ? Math.round(successCount / totalCount * 100) : 0;
-  const failedPercent = totalCount > 0 ? Math.round(failedCount / totalCount * 100) : 0;
-  const pendingPercent = totalCount > 0 ? Math.round(pendingCount / totalCount * 100) : 0;
+  const pendingCount = Math.max(0, totalCount - successCount - failedCount);
+  const progressPercent = totalCount > 0 ? Math.min(100, Math.round((successCount + failedCount) / totalCount * 100)) : 0;
+  const successPercent = totalCount > 0 ? Math.min(100, Math.round(successCount / totalCount * 100)) : 0;
+  const failedPercent = totalCount > 0 ? Math.min(100, Math.round(failedCount / totalCount * 100)) : 0;
+  const pendingPercent = Math.max(0, 100 - successPercent - failedPercent);
 
   const displayBatchId = currentBatchId || executionId || result?.batchId;
   const hasBatch = !!displayBatchId;

@@ -156,7 +156,7 @@ router.get('/batches', (_req, res) => {
         successCount: r.successCount,
         failedCount: r.failedCount,
         rolledBackCount: r.rolledBackCount,
-        successRate: r.totalCount > 0 ? Math.round(((r.successCount + r.rolledBackCount) / r.totalCount) * 100) : 0,
+        successRate: r.totalCount > 0 ? Math.round((r.successCount / r.totalCount) * 100) : 0,
         status: rollback?.status || 'available',
         endTime: r.endTime,
         operator: r.operator,

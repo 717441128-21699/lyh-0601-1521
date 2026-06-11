@@ -79,7 +79,8 @@ interface HRState {
   runPrecheck: (csvContent: string, filename?: string) => Promise<void>;
   closePrecheck: () => void;
   applyMappingAndImport: (
-    mapping: Array<{ sourceColumn: string; targetField: string }>
+    mapping: Array<{ sourceColumn: string; targetField: string }>,
+    dateOverrides?: { field: string; format: string }[]
   ) => Promise<EmployeeChange[] | null>;
   updatePrecheckMapping: (mapping: PrecheckColumnMapping[]) => void;
 
@@ -358,15 +359,19 @@ export const useHRStore = create<HRState>((set, get) => ({
 
   updatePrecheckMapping: (mapping) => set({ precheckMapping: mapping }),
 
-  applyMappingAndImport: async (mapping) => {
+  applyMappingAndImport: async (mapping, dateOverrides) => {
     const { precheckCsvContent } = get();
     if (!precheckCsvContent) return null;
     set({ isLoading: true, error: null });
     try {
+      const body: any = { csvContent: precheckCsvContent, mapping };
+      if (dateOverrides && dateOverrides.length > 0) {
+        body.dateOverrides = dateOverrides;
+      }
       const res = await fetch('/api/hr/apply-mapping', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ csvContent: precheckCsvContent, mapping }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '导入解析失败');

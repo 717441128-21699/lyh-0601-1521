@@ -650,12 +650,13 @@ export default function Home() {
               ) : (
                 <div className="divide-y divide-slate-100">
                   {batchSummaryList.map((batch) => {
-                    const rate = batch.successRate != null ? Math.round(batch.successRate * 100) : 0;
+                    const rate = batch.successRate != null ? Math.min(100, Math.round(batch.successRate)) : 0;
+                    const rolled = batch.status === 'rolled_back';
                     return (
                       <button
                         key={batch.batchId}
                         onClick={() => handleViewReport(batch.batchId)}
-                        className="w-full p-4 text-left hover:bg-slate-50 transition-colors group"
+                        className={`w-full p-4 text-left hover:bg-slate-50 transition-colors group ${rolled ? 'opacity-70 bg-slate-50/50' : ''}`}
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1 min-w-0">
@@ -663,11 +664,12 @@ export default function Home() {
                               <Hash className="w-3.5 h-3.5 text-slate-400" />
                               <span className="font-mono text-xs text-slate-500">{batch.batchId}</span>
                               <span className={`px-2 py-0.5 text-[10px] rounded-full font-medium ${
+                                rolled ? 'bg-slate-200 text-slate-700' :
                                 batch.status === 'completed' ? 'bg-success-100 text-success-700' :
                                 batch.status === 'failed' ? 'bg-danger-100 text-danger-700' :
                                 'bg-warning-100 text-warning-700'
                               }`}>
-                                {batch.status === 'completed' ? '已完成' : batch.status === 'failed' ? '失败' : '处理中'}
+                                {rolled ? '已撤回' : batch.status === 'completed' ? '已完成' : batch.status === 'failed' ? '失败' : '处理中'}
                               </span>
                             </div>
                             <h4 className="font-semibold text-slate-800 group-hover:text-primary-700 transition-colors truncate">
@@ -676,7 +678,7 @@ export default function Home() {
                             <div className="flex items-center gap-4 mt-2 text-xs text-slate-500">
                               <span className="flex items-center gap-1">
                                 <Clock className="w-3 h-3" />
-                                {batch.endTime || '-'}
+                                {batch.endTime ? new Date(batch.endTime).toLocaleDateString('zh-CN') : '-'}
                               </span>
                               {batch.operator && (
                                 <span>操作人：{batch.operator}</span>
@@ -691,6 +693,7 @@ export default function Home() {
                             </div>
                             <div className="flex items-center gap-1">
                               <span className={`text-lg font-bold ${
+                                rolled ? 'text-slate-500' :
                                 rate >= 90 ? 'text-success-600' : rate >= 70 ? 'text-warning-600' : 'text-danger-600'
                               }`}>{rate}%</span>
                               <span className="text-[10px] text-slate-400">成功率</span>
@@ -698,9 +701,10 @@ export default function Home() {
                             <div className="w-24 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                               <div
                                 className={`h-full rounded-full transition-all ${
+                                  rolled ? 'bg-slate-400' :
                                   rate >= 90 ? 'bg-success-500' : rate >= 70 ? 'bg-warning-500' : 'bg-danger-500'
                                 }`}
-                                style={{ width: `${rate}%` }}
+                                style={{ width: `${Math.min(100, rate)}%` }}
                               />
                             </div>
                             <div className="flex items-center gap-2 text-[10px] text-slate-500 mt-0.5">

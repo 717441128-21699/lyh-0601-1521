@@ -86,8 +86,27 @@ const DATE_PATTERNS = [
   { regex: /^(\d{4})年(\d{1,2})月(\d{1,2})日$/, format: 'YYYY年MM月DD日', example: '2026年6月12日' },
 ];
 
-const normalizeDate = (value: string): { normalized: string; detectedFormat: string } => {
+const normalizeDate = (value: string, expectedFormat?: string): { normalized: string; detectedFormat: string } => {
   const v = value.trim();
+  if (expectedFormat) {
+    const pattern = DATE_PATTERNS.find(p => p.format === expectedFormat);
+    if (pattern) {
+      const m = v.match(pattern.regex);
+      if (m) {
+        let y: string, mo: string, d: string;
+        if (pattern.format.startsWith('YYYY')) {
+          [, y, mo, d] = m;
+        } else {
+          [, mo, d, y] = m;
+        }
+        const year = parseInt(y, 10);
+        const month = parseInt(mo, 10);
+        const day = parseInt(d, 10);
+        const normalized = `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+        return { normalized, detectedFormat: expectedFormat };
+      }
+    }
+  }
   for (const p of DATE_PATTERNS) {
     if (p.regex.test(v)) {
       const m = v.match(p.regex);
@@ -241,6 +260,10 @@ export class ImportPrecheckService {
     const allRows = result.data as Record<string, any>[];
 
     const sourceToTarget = new Map(mappingOverride.map((m) => [m.sourceColumn, m.targetField]));
+    const dateFormatMap = new Map<string, string>();
+    if (dateOverrides) {
+      dateOverrides.forEach(d => dateFormatMap.set(d.field, d.format));
+    }
 
     return allRows.map((row, idx) => {
       const change: Record<string, any> = {
@@ -250,7 +273,8 @@ export class ImportPrecheckService {
       sourceToTarget.forEach((target, src) => {
         if (row[src] !== undefined) {
           if (target === 'effectiveDate') {
-            const { normalized } = normalizeDate(String(row[src]));
+            const expectedFormat = dateFormatMap.get(target) || dateFormatMap.get(src) || undefined;
+            const { normalized } = normalizeDate(String(row[src]), expectedFormat);
             change[target] = normalized;
           } else {
             change[target] = String(row[src]).trim();
